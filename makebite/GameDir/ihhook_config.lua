@@ -15,5 +15,7 @@ local this={
 	forceUsePatterns=false,
 	logFoxStringCreateInPlace=false,
 	logTime=false,--prefix |time| before log. time is good for figuring out how long between steps, but makes it harder to compare similar logs.
+	
+	keyZScriptPath="", --Script to run when pressing the 'Z' button. Set to "" to disable.
 }--this
 return this
