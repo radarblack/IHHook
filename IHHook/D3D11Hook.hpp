@@ -2,7 +2,7 @@
 #pragma once
 
 #include <functional>
-#include <memory>
+#include <memory> // radarblack's modification: addresses the trimmed "transitive inclusion" in new STL. passes through yml build. here to fix that build error.
 
 #include <d3d11.h>
 #include <dxgi.h>
