@@ -775,7 +775,8 @@ namespace IHHook {
 		config.logFileLoad = false;
 		config.forceUsePatterns = false;
 		config.logFoxStringCreateInPlace = false; //ZIP: Fox hooks
-		config.keyZScriptPath = "";
+		
+		config.keyZScriptPath = ""; // radarblack's modification
 
 		std::string line;
 		while (std::getline(infile, line)) {
@@ -856,6 +857,8 @@ namespace IHHook {
 			else if (varName == "logTime") {
 				config.logTime = valueStr == "true";
 			}
+
+			// radarblack's modification
 			else if (varName == "keyZScriptPath") {
 				//tex strip surrounding quotes ("..." or '...') since this is a string value, not bool
 				if (valueStr.size() >= 2 &&
