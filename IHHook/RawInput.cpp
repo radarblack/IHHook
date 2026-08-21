@@ -309,11 +309,11 @@ namespace IHHook {
 			}
 		}//ToggleStyleEditor
 
-		//tex: runs config.keyZScriptPath (set via ihhook_config.lua) on the mgsv lua side.
-		//GOTCHA: don't touch Hooks_Lua::luaState directly here - RawInput's WndProc runs on a different
-		//thread to the one running mgsv's lua state, so cross-thread lua_pcall/luaL_loadfile would be unsafe.
-		//Instead reuse the existing thread-safe IHMenu message queue (same one ToggleMenu/MenuOff use below),
-		//which InfExtToMgsv.lua already drains and dispatches to the existing "DoScript" command (loadstring+call).
+		// radarblack's modification: runs config.keyZScriptPath (set via ihhook_config.lua) on the lua side.
+		// don't touch Hooks_Lua::luaState directly here - RawInput's WndProc runs on a different
+		// thread to the one running mgsv's lua state, so cross-thread lua_pcall/luaL_loadfile would be unsafe.
+		// Instead reuse the existing thread-safe IHMenu message queue (same one ToggleMenu/MenuOff use below),
+		// which InfExtToMgsv.lua already drains and dispatches to the existing "DoScript" command (loadstring+call).
 		void RunKeyZScript(RawInput::BUTTONEVENT buttonEvent) {
 			if (buttonEvent != RawInput::BUTTONEVENT::ONDOWN) {
 				return;
@@ -325,10 +325,10 @@ namespace IHHook {
 			}
 
 			spdlog::debug("RunKeyZScript: queuing dofile for {}", config.keyZScriptPath);
-			//tex: [[ ]] long-bracket string avoids having to escape backslashes in windows paths.
-			//GOTCHA: DoScript's IPC message is pipe('|') delimited, so keyZScriptPath must not contain '|'.
-			IHMenu::QueueMessageIn("DoScript|dofile([[" + config.keyZScriptPath + "]])");
-		}//RunKeyZScript
+			// [[ ]] long-bracket string avoids having to escape backslashes in windows paths. remember this! this will ruin you! lol
+			// DoScript's IPC message is pipe('|') delimited, so keyZScriptPath must not contain '|'. similar as above.
+			IHMenu::QueueMessageIn("DoScript|dofile([[" + config.keyZScriptPath + "]])"); // runs the script through IH's DoScript IPC
+		}// radarblack's modification: End
 
 		//DEBUGNOW
 		//tex GOTCHA: WORKAROUND: The game stops lua updates (all gameplay updates I guess) in the pause menu, 
@@ -425,13 +425,17 @@ namespace IHHook {
 			RegisterAction(VK_F2, ToggleCursor);//DEBUGNOW
 			RegisterAction(VK_F3, ToggleMenu);//DEBUGNOW
 			RegisterAction(VK_ESCAPE, MenuOff);//DEBUGNOW
-			RegisterAction('Z', RunKeyZScript);//tex: runs config.keyZScriptPath, see RunKeyZScript
 			//RegisterAction(VK_F5, ToggleImguiDemo);//DEBUGNOW
 			//RegisterAction(VK_F4, ToggleStyleEditor);//DEBUGNOW
-
+			
 			//DEBUG
 			//block[VK_LBUTTON] = true;
 			//block[VK_SPACE] = true;
+
+			// radarblack's modification: register the 'Z' key to the keybind → this is where you put what keys you want to use and the funcpath to read! 
+			RegisterAction('Z', RunKeyZScript); // declared at line 317
+			// plans: make this part fully modular. no idea how yet, but will. lol
+			
 		}//InitializeInput
 
 		//CULL not needed, the game will have set up it's own
