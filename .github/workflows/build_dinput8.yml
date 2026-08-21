@@ -1,0 +1,115 @@
+name: Build dinput8.dll (IHHook)
+
+on:
+  workflow_dispatch:      # only runs when you manually trigger it from the Actions tab
+
+jobs:
+  build:
+    runs-on: windows-latest   # only Windows runners have MSVC/MSBuild available
+
+    steps:
+      # GOTCHA: AddressCSVToMacroHeader.lua is committed as a real filesystem symlink whose
+      # "target" is actually its entire script content stuffed into the target field (not a
+      # normal short path). Windows' native CreateSymbolicLink enforces a much stricter path
+      # length than Linux, so a normal checkout fails with "Filename too long" trying to
+      # materialize it. Telling git not to create real OS symlinks (it'll write a plain text
+      # file containing that target string instead) sidesteps this - harmless since this file
+      # is a standalone dev tool script, unrelated to actually compiling the DLL.
+      - name: Disable git symlinks (repo has an oversized symlink target)
+        run: git config --global core.symlinks false
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # windows-latest ships with a full VS2022 install, but this project pins
+      # PlatformToolset=v141 (VS2017) for the x64 configs (see IHHook.vcxproj).
+      # setup-msbuild finds whichever VS install is on the runner and puts
+      # msbuild.exe on PATH - it does NOT install missing toolsets by itself.
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      # DEAD END, CONFIRMED BY LOGS - don't repeat this: v141 is not present in VC\Tools\MSVC
+      # (only 14.29.x/14.44.x/14.51.x are installed) and vswhere -requires explicitly reports
+      # the v141 component as NOT registered even after a "successful" (exit 0) vs_installer
+      # modify call - meaning that component ID no longer exists in this VS generation's catalog
+      # at all, so no amount of re-attempting the install will make it appear. The only real fix
+      # is to build against whichever toolset generation actually IS installed.
+      - name: Find best available PlatformToolset
+        id: toolset
+        shell: pwsh
+        run: |
+          function Find-VsTool($name) {
+            foreach ($base in @("${env:ProgramFiles(x86)}", "${env:ProgramFiles}")) {
+              $candidate = Join-Path $base "Microsoft Visual Studio\Installer\$name"
+              if (Test-Path $candidate) { return $candidate }
+            }
+            throw "$name not found under either Program Files location"
+          }
+          $vswhere = Find-VsTool "vswhere.exe"
+          $installPath = & $vswhere -latest -products * -property installationPath
+          Write-Host "VS install path: $installPath"
+
+          $msvcRoot = Join-Path $installPath "VC\Tools\MSVC"
+          if (Test-Path $msvcRoot) {
+            Write-Host "MSVC toolset versions found under VC\Tools\MSVC:"
+            Get-ChildItem $msvcRoot -Directory | ForEach-Object { Write-Host "  $($_.Name)" }
+          }
+
+          # Microsoft ships a marker file per toolset generation under VC\Auxiliary\Build, e.g.
+          # Microsoft.VCToolsVersion.v143.default.txt - this is the authoritative way to learn
+          # the actual PlatformToolset label string for whatever's installed, instead of guessing
+          # one from the MSVC folder version number (which doesn't map 1:1 in a fixed way).
+          $auxBuild = Join-Path $installPath "VC\Auxiliary\Build"
+          $markers = Get-ChildItem $auxBuild -Filter "Microsoft.VCToolsVersion.v*.default.txt" -ErrorAction SilentlyContinue
+          if ($markers.Count -eq 0) {
+            throw "No Microsoft.VCToolsVersion.v*.default.txt marker files found under $auxBuild - can't determine PlatformToolset label"
+          }
+          $labels = $markers | ForEach-Object {
+            if ($_.Name -match '^Microsoft\.VCToolsVersion\.(v\d+)\.default\.txt$') { $Matches[1] }
+          } | Sort-Object -Descending
+          Write-Host "PlatformToolset labels available: $($labels -join ', ')"
+          $best = $labels[0]
+          Write-Host "Using: $best"
+          echo "toolset=$best" >> $env:GITHUB_OUTPUT
+
+      - name: Find installed Windows 10 SDK version
+        id: sdk
+        shell: pwsh
+        run: |
+          # The project pins WindowsTargetPlatformVersion=10.0.17763.0 in IHHook.vcxproj,
+          # but that exact SDK isn't guaranteed to be on whatever the runner image ships this week
+          # (see MSB8036). Detect whatever IS actually installed instead of guessing/hardcoding a version,
+          # then pass it as an MSBuild command-line property below - /p: properties are global properties
+          # and take precedence over the project's own <WindowsTargetPlatformVersion> assignment.
+          $sdkVersions = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include" -Directory |
+            Where-Object { $_.Name -match '^10\.' } |
+            Sort-Object Name -Descending
+          if ($sdkVersions.Count -eq 0) {
+            Write-Error "No Windows 10 SDK found under Windows Kits\10\Include"
+            exit 1
+          }
+          $latest = $sdkVersions[0].Name
+          Write-Host "Installed SDK versions found:"
+          $sdkVersions | ForEach-Object { Write-Host "  $($_.Name)" }
+          Write-Host "Using: $latest"
+          echo "version=$latest" >> $env:GITHUB_OUTPUT
+
+      - name: Build Release|x64
+        run: msbuild IHHook.sln /p:Configuration=Release /p:Platform=x64 /p:WindowsTargetPlatformVersion=${{ steps.sdk.outputs.version }} /p:PlatformToolset=${{ steps.toolset.outputs.toolset }} /m
+        # /m = parallel build. Swap Configuration to Debug if you want a debug build
+        # (keeps debugMode's extra spdlog output and symbols) instead.
+        # GOTCHA: overriding PlatformToolset like this builds with a newer toolset than the
+        # project was actually written/tested against (v141). This usually just works for
+        # straightforward C++ like this project's, but if you hit new compiler errors that
+        # weren't there before, that's why - it means some code here relied on older/looser
+        # v141 compiler behavior that a newer toolset enforces more strictly.
+
+      # IHHook.vcxproj's own Release|x64 post-build step already copies and
+      # renames the output to makebite/GameDir/dinput8.dll for you -
+      # that's the file to grab, not IHHook/x64/Release/IHHook.dll.
+      - name: Upload dinput8.dll
+        uses: actions/upload-artifact@v4
+        with:
+          name: dinput8-dll
+          path: makebite/GameDir/dinput8.dll
+          if-no-files-found: error
