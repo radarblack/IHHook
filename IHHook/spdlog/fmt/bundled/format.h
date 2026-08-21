@@ -308,6 +308,7 @@ inline typename Container::value_type* get_data(Container& c) {
   return c.data();
 }
 
+// radarblack's modification: redefined secure-SCL support to compile this checked version of the code
 #if defined(_SECURE_SCL) && _SECURE_SCL
 // Make a checked iterator to avoid MSVC warnings.
 template <typename T> using checked_ptr = stdext::checked_array_iterator<T*>;
