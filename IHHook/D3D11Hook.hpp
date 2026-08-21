@@ -2,6 +2,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 
 #include <d3d11.h>
 #include <dxgi.h>
