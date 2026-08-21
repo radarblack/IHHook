@@ -39,6 +39,7 @@ local this = {
 	enableFnvHook = false,
 	logFileLoad = false,
 	forceUsePatterns = false,
+	keyZScriptPath = "mod/devmodules/keyZ_script.lua",
 }--this
 return this
 */
@@ -61,6 +62,7 @@ namespace IHHook {
 		bool logFileLoad{ false };
 		bool forceUsePatterns{ false };
 		bool logFoxStringCreateInPlace{ false }; //ZIP: Fox hooks
+		std::string keyZScriptPath{ "" };//tex: lua script file run via DoScript IPC when Z is pressed, relative to game root. Empty disables the KeyZ action.
 		bool logTime{ false };//prefix |time| before log (used to be default) time is good for figuring out how long between steps, but makes it harder to compare similar logs. TODO: might be better to have a SetPattern lua call for more control?
 	};
 	extern struct Config config;
