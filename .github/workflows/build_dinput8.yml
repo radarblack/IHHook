@@ -1,7 +1,9 @@
+# This is made with the help of Claude AI. Couldn't manually resolve the symbolic-link issue. Not that smart enough. lol
+
 name: Build dinput8.dll (IHHook)
 
 on:
-  workflow_dispatch:      # only runs when you manually trigger it from the Actions tab
+  workflow_dispatch:
 
 jobs:
   build:
