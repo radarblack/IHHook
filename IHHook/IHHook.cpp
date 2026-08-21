@@ -775,6 +775,7 @@ namespace IHHook {
 		config.logFileLoad = false;
 		config.forceUsePatterns = false;
 		config.logFoxStringCreateInPlace = false; //ZIP: Fox hooks
+		config.keyZScriptPath = "";
 
 		std::string line;
 		while (std::getline(infile, line)) {
@@ -854,6 +855,15 @@ namespace IHHook {
 			}
 			else if (varName == "logTime") {
 				config.logTime = valueStr == "true";
+			}
+			else if (varName == "keyZScriptPath") {
+				//tex strip surrounding quotes ("..." or '...') since this is a string value, not bool
+				if (valueStr.size() >= 2 &&
+					((valueStr.front() == '"' && valueStr.back() == '"') ||
+					 (valueStr.front() == '\'' && valueStr.back() == '\''))) {
+					valueStr = valueStr.substr(1, valueStr.size() - 2);
+				}
+				config.keyZScriptPath = valueStr;
 			}
 		}//while line
 
