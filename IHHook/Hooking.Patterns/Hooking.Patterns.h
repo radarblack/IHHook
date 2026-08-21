@@ -238,5 +238,4 @@ namespace hook
         return pattern(std::move(pattern_string)).get_first<T>(offset);
     }
 }
-
 #pragma warning(pop)
