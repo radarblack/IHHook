@@ -15,6 +15,7 @@ local this={
 	forceUsePatterns=false,
 	logFoxStringCreateInPlace=false,
 	logTime=false,--prefix |time| before log. time is good for figuring out how long between steps, but makes it harder to compare similar logs.
-	keyZScriptPath="",--tex: path (relative to game root) to a lua script to run when Z is pressed in-game. Leave "" to disable.
+	
+	keyZScriptPath="", --Script to run when pressing the 'Z' button. Set to "" to disable.
 }--this
 return this
