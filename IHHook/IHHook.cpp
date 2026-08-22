@@ -33,6 +33,7 @@
 
 
 #include "IHMenu.h"
+#include "KeyBindMenu.h"
 #include "StyleEditor.h"
 
 #include "Util.h"//config 
@@ -643,6 +644,8 @@ namespace IHHook {
 
 			IHMenu::AddMenuCommands();
 
+			KeyBindMenu::Init(config.keyBindMenuToggleKey);//tex: loads/registers persisted key bindings + the menu-toggle key (default F4)
+
 			InitCursorHook();
 
 			//spdlog::info("Starting game data initialization thread");
@@ -755,6 +758,10 @@ namespace IHHook {
 		}
 		menuOpenPrev = menuOpen;
 
+		if (KeyBindMenu::menuOpen) {
+			KeyBindMenu::Draw(&KeyBindMenu::menuOpen);
+		}
+
 		//ImGui::End();
 	}//DrawUI
 
@@ -775,8 +782,8 @@ namespace IHHook {
 		config.logFileLoad = false;
 		config.forceUsePatterns = false;
 		config.logFoxStringCreateInPlace = false; //ZIP: Fox hooks
-		
-		config.keyZScriptPath = ""; // radarblack's modification
+		config.keyZScriptPath = "";
+		config.keyBindMenuToggleKey = "F4";
 
 		std::string line;
 		while (std::getline(infile, line)) {
@@ -857,8 +864,6 @@ namespace IHHook {
 			else if (varName == "logTime") {
 				config.logTime = valueStr == "true";
 			}
-
-			// radarblack's modification
 			else if (varName == "keyZScriptPath") {
 				//tex strip surrounding quotes ("..." or '...') since this is a string value, not bool
 				if (valueStr.size() >= 2 &&
@@ -867,6 +872,14 @@ namespace IHHook {
 					valueStr = valueStr.substr(1, valueStr.size() - 2);
 				}
 				config.keyZScriptPath = valueStr;
+			}
+			else if (varName == "keyBindMenuToggleKey") {
+				if (valueStr.size() >= 2 &&
+					((valueStr.front() == '"' && valueStr.back() == '"') ||
+					 (valueStr.front() == '\'' && valueStr.back() == '\''))) {
+					valueStr = valueStr.substr(1, valueStr.size() - 2);
+				}
+				config.keyBindMenuToggleKey = valueStr;
 			}
 		}//while line
 
