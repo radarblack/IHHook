@@ -1,15 +1,19 @@
 #pragma once
 #include "windowsapi.h"
+#include "RawInput.h"
 #include <string>
 #include <vector>
 
 namespace IHHook {
 	namespace KeyBindMenu {
-		//tex: one user-added "press this key, run this lua file" binding
+		//tex: one user-added "press this key (+ optional Shift/Alt), run this lua file" binding
 		struct KeyBind {
 			USHORT vKey;
-			std::string keyName;     //tex: display name, e.g. "F6", "A", "Numpad5" - see vkNameTable
+			bool needShift;
+			bool needAlt;
+			std::string keyName;     //tex: base key display name, e.g. "F6", "A", "," - see vkNameTable
 			std::string scriptPath;  //tex: passed to dofile() via the same DoScript IPC path RunKeyZScript uses
+			RawInput::ActionHandle handle; //tex: needed to remove just THIS binding, not every action on vKey
 		};
 
 		//tex: called once at startup (see IHHook.cpp init sequence) - loads persisted bindings
