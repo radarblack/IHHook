@@ -39,8 +39,8 @@ local this = {
 	enableFnvHook = false,
 	logFileLoad = false,
 	forceUsePatterns = false,
-	
-	keyZScriptPath = "mod/devmodules/keyZ_script.lua", // radarblack's addition here
+	keyZScriptPath = "mod/devmodules/keyZ_script.lua",
+	keyBindMenuToggleKey = "F4",
 }--this
 return this
 */
@@ -63,9 +63,8 @@ namespace IHHook {
 		bool logFileLoad{ false };
 		bool forceUsePatterns{ false };
 		bool logFoxStringCreateInPlace{ false }; //ZIP: Fox hooks
-
-		std::string keyZScriptPath{ "" }; // radarblack's modification: Run script via DoScript IPC on button press. Disable if no value/file path is set.
-
+		std::string keyZScriptPath{ "" };//tex: lua script file run via DoScript IPC when Z is pressed, relative to game root. Empty disables the KeyZ action.
+		std::string keyBindMenuToggleKey{ "F4" };//tex: starting key for KeyBindMenu, see KeyBindMenu.h. Only used if ihhook_keybinds.txt doesn't already have a persisted remap.
 		bool logTime{ false };//prefix |time| before log (used to be default) time is good for figuring out how long between steps, but makes it harder to compare similar logs. TODO: might be better to have a SetPattern lua call for more control?
 	};
 	extern struct Config config;
