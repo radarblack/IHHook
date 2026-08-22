@@ -15,7 +15,7 @@ local this={
 	forceUsePatterns=false,
 	logFoxStringCreateInPlace=false,
 	logTime=false,--prefix |time| before log. time is good for figuring out how long between steps, but makes it harder to compare similar logs.
-	
-	keyZScriptPath="", --Script to run when pressing the 'Z' button. Set to "" to disable.
+	keyZScriptPath="",--tex: path (relative to game root) to a lua script to run when Z is pressed in-game. Leave "" to disable.
+	keyBindMenuToggleKey="F4",--tex: starting key that opens the in-game key-bindings menu (add more keys->scripts from there). Only used until you remap it once from the menu itself, after which ihhook_keybinds.txt takes over.
 }--this
 return this
