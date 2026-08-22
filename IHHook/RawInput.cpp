@@ -16,7 +16,8 @@ namespace IHHook {
 		USHORT currFlags[vKeyMax];//tex: indexed by Virtual Keycode
 		bool ignore[vKeyMax] = { false };//tex: don't process key, set up in InitIgnoreKeys
 		bool blockGameKeys[vKeyMax] = { false };//tex: block game from recieving message
-		std::list<ButtonAction>* buttonActions[vKeyMax] = { nullptr };
+		std::list<std::pair<ActionHandle, ButtonAction>>* buttonActions[vKeyMax] = { nullptr };
+		ActionHandle nextActionHandle = 1;//tex: 0 reserved as an "invalid/none" sentinel if ever needed
 
 		void BlockMouseClick() {
 			blockGameKeys[VK_LBUTTON] = true;
@@ -209,25 +210,27 @@ namespace IHHook {
 
 		//IN/SIDE: buttonActions
 		void DoActions(USHORT vKey, RawInput::BUTTONEVENT buttonEvent) {
-			std::list<ButtonAction>* actions = buttonActions[vKey];
+			std::list<std::pair<ActionHandle, ButtonAction>>* actions = buttonActions[vKey];
 			if (actions != nullptr) {
 				spdlog::debug("RawInput DoActions for vKey:{}", vKey);
-				for (std::list<ButtonAction>::iterator it = actions->begin(); it != actions->end(); ++it) {
-					ButtonAction Action = *it;
+				for (auto it = actions->begin(); it != actions->end(); ++it) {
+					ButtonAction Action = it->second;
 					Action(buttonEvent);
 				}
 			}
 		}//DoActions
 
 
-		void RegisterAction(USHORT vKey, ButtonAction action) {
+		ActionHandle RegisterAction(USHORT vKey, ButtonAction action) {
 			assert(vKey > 0 && vKey < vKeyMax);
 			spdlog::debug("RawInput RegisterAction for vKey:{}", vKey);
 			if (buttonActions[vKey] == nullptr) {
-				buttonActions[vKey] = new std::list<ButtonAction>();
+				buttonActions[vKey] = new std::list<std::pair<ActionHandle, ButtonAction>>();
 			}
 
-			buttonActions[vKey]->push_back(action);
+			ActionHandle handle = nextActionHandle++;
+			buttonActions[vKey]->push_back({ handle, action });
+			return handle;
 		}//RegisterAction
 
 		void UnRegisterAction(USHORT vKey) {
@@ -239,14 +242,31 @@ namespace IHHook {
 				delete buttonActions[vKey];
 				buttonActions[vKey] = nullptr;
 			}
-
-			//for vkey actions
-			//remove action
-
-			//if actions empty
-			//delete buttonActions[vKey]
-			//buttonActions[vKey] = NULL;
 		}//UnRegisterAction
+
+		void UnRegisterAction(USHORT vKey, ActionHandle handle) {
+			std::list<std::pair<ActionHandle, ButtonAction>>* actions = buttonActions[vKey];
+			if (actions == nullptr) {
+				spdlog::warn("RawInput UnRegisterAction: No actions for vKey {}", vKey);
+				return;
+			}
+			for (auto it = actions->begin(); it != actions->end(); ++it) {
+				if (it->first == handle) {
+					actions->erase(it);
+					spdlog::debug("RawInput UnRegisterAction: removed handle {} from vKey {}", handle, vKey);
+					if (actions->empty()) {
+						delete buttonActions[vKey];
+						buttonActions[vKey] = nullptr;
+					}
+					return;
+				}
+			}
+			spdlog::warn("RawInput UnRegisterAction: handle {} not found for vKey {}", handle, vKey);
+		}//UnRegisterAction (handle)
+
+		bool IsKeyDown(USHORT vKey) {
+			return currFlags[vKey] == RI_KEY_MAKE;
+		}//IsKeyDown
 
 		//DEBUG
 		void TestAction(BUTTONEVENT buttonEvent) {
@@ -309,11 +329,11 @@ namespace IHHook {
 			}
 		}//ToggleStyleEditor
 
-		// radarblack's modification: runs config.keyZScriptPath (set via ihhook_config.lua) on the lua side.
-		// don't touch Hooks_Lua::luaState directly here - RawInput's WndProc runs on a different
-		// thread to the one running mgsv's lua state, so cross-thread lua_pcall/luaL_loadfile would be unsafe.
-		// Instead reuse the existing thread-safe IHMenu message queue (same one ToggleMenu/MenuOff use below),
-		// which InfExtToMgsv.lua already drains and dispatches to the existing "DoScript" command (loadstring+call).
+		//tex: runs config.keyZScriptPath (set via ihhook_config.lua) on the mgsv lua side.
+		//GOTCHA: don't touch Hooks_Lua::luaState directly here - RawInput's WndProc runs on a different
+		//thread to the one running mgsv's lua state, so cross-thread lua_pcall/luaL_loadfile would be unsafe.
+		//Instead reuse the existing thread-safe IHMenu message queue (same one ToggleMenu/MenuOff use below),
+		//which InfExtToMgsv.lua already drains and dispatches to the existing "DoScript" command (loadstring+call).
 		void RunKeyZScript(RawInput::BUTTONEVENT buttonEvent) {
 			if (buttonEvent != RawInput::BUTTONEVENT::ONDOWN) {
 				return;
@@ -325,10 +345,10 @@ namespace IHHook {
 			}
 
 			spdlog::debug("RunKeyZScript: queuing dofile for {}", config.keyZScriptPath);
-			// [[ ]] long-bracket string avoids having to escape backslashes in windows paths. remember this! this will ruin you! lol
-			// DoScript's IPC message is pipe('|') delimited, so keyZScriptPath must not contain '|'. similar as above.
-			IHMenu::QueueMessageIn("DoScript|dofile([[" + config.keyZScriptPath + "]])"); // runs the script through IH's DoScript IPC
-		}// radarblack's modification: End
+			//tex: [[ ]] long-bracket string avoids having to escape backslashes in windows paths.
+			//GOTCHA: DoScript's IPC message is pipe('|') delimited, so keyZScriptPath must not contain '|'.
+			IHMenu::QueueMessageIn("DoScript|dofile([[" + config.keyZScriptPath + "]])");
+		}//RunKeyZScript
 
 		//DEBUGNOW
 		//tex GOTCHA: WORKAROUND: The game stops lua updates (all gameplay updates I guess) in the pause menu, 
@@ -425,17 +445,13 @@ namespace IHHook {
 			RegisterAction(VK_F2, ToggleCursor);//DEBUGNOW
 			RegisterAction(VK_F3, ToggleMenu);//DEBUGNOW
 			RegisterAction(VK_ESCAPE, MenuOff);//DEBUGNOW
+			RegisterAction('Z', RunKeyZScript);//tex: runs config.keyZScriptPath, see RunKeyZScript
 			//RegisterAction(VK_F5, ToggleImguiDemo);//DEBUGNOW
 			//RegisterAction(VK_F4, ToggleStyleEditor);//DEBUGNOW
-			
+
 			//DEBUG
 			//block[VK_LBUTTON] = true;
 			//block[VK_SPACE] = true;
-
-			// radarblack's modification: register the 'Z' key to the keybind → this is where you put what keys you want to use and the funcpath to read! 
-			RegisterAction('Z', RunKeyZScript); // declared at line 317
-			// plans: make this part fully modular. no idea how yet, but will. lol
-			
 		}//InitializeInput
 
 		//CULL not needed, the game will have set up it's own
