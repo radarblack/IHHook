@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -295,6 +295,7 @@ copy /Y "$(SolutionDir)include\metadata.xml" "$(SolutionDir)makebite-plugin\meta
     <ClInclude Include="Hooks_Vehicle.h" />
     <ClInclude Include="IHHook.h" />
     <ClInclude Include="IHMenu.h" />
+    <ClInclude Include="KeyBindMenu.h" />
     <ClInclude Include="imguiimpl\imgui_impl_dx11.h" />
     <ClInclude Include="imguiimpl\imgui_impl_win32.h" />
     <ClInclude Include="imgui\imgui.h" />
@@ -370,6 +371,7 @@ copy /Y "$(SolutionDir)include\metadata.xml" "$(SolutionDir)makebite-plugin\meta
     <ClCompile Include="Hooks_Vehicle.cpp" />
     <ClCompile Include="IHHook.cpp" />
     <ClCompile Include="IHMenu.cpp" />
+    <ClCompile Include="KeyBindMenu.cpp" />
     <ClCompile Include="imguiimpl\imgui_impl_dx11.cpp" />
     <ClCompile Include="imguiimpl\imgui_impl_win32.cpp" />
     <ClCompile Include="imguiimpl\imgui_lua_bindings.cpp" />
