@@ -6,7 +6,6 @@
 #include "imgui/imgui.h"
 
 #include <fstream>
-#include <cstring>
 
 namespace IHHook {
 	namespace KeyBindMenu {
@@ -43,6 +42,7 @@ namespace IHHook {
 			{"Numpad3", VK_NUMPAD3}, {"Numpad4", VK_NUMPAD4}, {"Numpad5", VK_NUMPAD5},
 			{"Numpad6", VK_NUMPAD6}, {"Numpad7", VK_NUMPAD7}, {"Numpad8", VK_NUMPAD8},
 			{"Numpad9", VK_NUMPAD9},
+			{",", VK_OEM_COMMA}, {".", VK_OEM_PERIOD},
 		};
 		const int vkNameTableCount = sizeof(vkNameTable) / sizeof(vkNameTable[0]);
 
@@ -65,10 +65,23 @@ namespace IHHook {
 			return -1;
 		}//VKeyForName
 
+		//tex: e.g. "Shift+Alt+Z", "Alt+F6", "Z" - what's shown in the bindings list
+		std::string CombinedDisplayName(const KeyBind& bind) {
+			std::string result;
+			if (bind.needShift) result += "Shift+";
+			if (bind.needAlt) result += "Alt+";
+			result += bind.keyName;
+			return result;
+		}//CombinedDisplayName
+
 		//tex: the key that opens/closes this menu itself - defaults from config.keyBindMenuToggleKey
 		//(see IHHook.cpp ParseConfig) but can be live-remapped from within the menu, at which point
 		//this persisted value takes precedence on next launch (see LoadBindings/SaveBindings).
+		//GOTCHA: unlike custom bindings, the menu-toggle key intentionally does NOT support Shift/Alt
+		//modifiers - keeping it a single plain key avoids complicating the one binding that must
+		//always be reachable to fix/undo everything else.
 		USHORT menuToggleVKey = VK_F4;
+		RawInput::ActionHandle menuToggleHandle = 0;
 		bool menuOpen = false;
 
 		//tex: RawInput action wired to whatever menuToggleVKey currently is - see RegisterMenuToggleKey
@@ -81,38 +94,48 @@ namespace IHHook {
 
 		void RegisterMenuToggleKey(USHORT vKey) {
 			menuToggleVKey = vKey;
-			RawInput::RegisterAction(vKey, OnMenuToggleKeyPressed);
+			menuToggleHandle = RawInput::RegisterAction(vKey, OnMenuToggleKeyPressed);
 		}//RegisterMenuToggleKey
 
-		//tex: RawInput::UnRegisterAction deletes a vKey's ENTIRE action list, not one specific
-		//action within it (see RawInput.cpp - buttonActions[vKey] is wiped wholesale). That means
-		//if a custom binding here shared a vKey with a built-in action (F2/F3/Escape/Z's
-		//RunKeyZScript) or even another custom binding, removing one via this menu would silently
-		//also break the other. Rather than changing RawInput's removal semantics (used by every
-		//hotkey in the DLL - higher risk to touch), this just refuses to create that situation.
-		bool IsVKeyAvailable(USHORT vKey) {
-			if (vKey == VK_F2 || vKey == VK_F3 || vKey == VK_ESCAPE || vKey == 'Z') {
-				return false;//tex: built-in actions from RawInput::InitializeInput
-			}
-			if (vKey == menuToggleVKey) {
-				return false;//tex: this menu's own toggle key
+		//tex: reserved regardless of Shift/Alt - these built-in actions (ToggleCursor, ToggleMenu,
+		//MenuOff, RunKeyZScript, and this menu's own toggle key) don't check modifier state
+		//themselves, so e.g. Shift+F2 would still fire the plain ToggleCursor action alongside
+		//whatever a new Shift+F2 custom binding did. Simplest to just keep these fully reserved.
+		bool IsReservedVKey(USHORT vKey) {
+			return vKey == VK_F2 || vKey == VK_F3 || vKey == VK_ESCAPE || vKey == 'Z' || vKey == menuToggleVKey;
+		}//IsReservedVKey
+
+		//tex: true if this exact key+modifier combination is free to bind. Different modifier
+		//combos on the SAME physical vKey (e.g. "F6" and "Shift+F6") are different, non-conflicting
+		//bindings - that's the whole point of adding modifier support - so this checks the full
+		//(vKey, needShift, needAlt) tuple against existing bindings, not vKey alone.
+		bool IsComboAvailable(USHORT vKey, bool needShift, bool needAlt) {
+			if (IsReservedVKey(vKey)) {
+				return false;
 			}
 			for (const KeyBind& bind : bindings) {
-				if (bind.vKey == vKey) {
-					return false;//tex: already used by one of our own bindings
+				if (bind.vKey == vKey && bind.needShift == needShift && bind.needAlt == needAlt) {
+					return false;
 				}
 			}
 			return true;
-		}//IsVKeyAvailable
+		}//IsComboAvailable
 
 		//tex: same DoScript IPC round-trip RunKeyZScript (RawInput.cpp) uses - capturing scriptPath
-		//per-lambda is exactly what widening ButtonAction to std::function (see RawInput.h) enables;
-		//this couldn't be a single shared plain function since each binding needs its own path.
-		void RegisterBindingAction(const KeyBind& bind) {
-			std::string scriptPath = bind.scriptPath; //tex: copy - captured by value below
-			RawInput::RegisterAction(bind.vKey, [scriptPath](RawInput::BUTTONEVENT buttonEvent) {
+		//(and the modifier requirement) per-lambda is exactly what widening ButtonAction to
+		//std::function (see RawInput.h) enables. Registers unconditionally against the base vKey -
+		//the modifier check happens inside the lambda itself, since RawInput dispatches by vKey
+		//only and knows nothing about Shift/Alt requirements.
+		RawInput::ActionHandle RegisterBindingAction(const KeyBind& bind) {
+			std::string scriptPath = bind.scriptPath; //tex: copied - captured by value below
+			bool needShift = bind.needShift;
+			bool needAlt = bind.needAlt;
+			return RawInput::RegisterAction(bind.vKey, [scriptPath, needShift, needAlt](RawInput::BUTTONEVENT buttonEvent) {
 				if (buttonEvent != RawInput::BUTTONEVENT::ONDOWN) {
 					return;
+				}
+				if (RawInput::IsKeyDown(VK_SHIFT) != needShift || RawInput::IsKeyDown(VK_MENU) != needAlt) {
+					return;//tex: e.g. this is the plain "Z" binding but Shift is currently held - not a match
 				}
 				spdlog::debug("KeyBindMenu: queuing dofile for {}", scriptPath);
 				IHMenu::QueueMessageIn("DoScript|dofile([[" + scriptPath + "]])");
@@ -127,7 +150,7 @@ namespace IHHook {
 			}
 			outFile << "MENUKEY|" << NameForVKey(menuToggleVKey) << "\n";
 			for (const KeyBind& bind : bindings) {
-				outFile << "BIND|" << bind.keyName << "|" << bind.scriptPath << "\n";
+				outFile << "BIND|" << bind.keyName << "|" << (bind.needShift ? "1" : "0") << "|" << (bind.needAlt ? "1" : "0") << "|" << bind.scriptPath << "\n";
 			}
 			outFile.close();
 			spdlog::debug("KeyBindMenu::SaveBindings: wrote {} binding(s) to {}", bindings.size(), bindsFileName);
@@ -161,24 +184,31 @@ namespace IHHook {
 						spdlog::warn("KeyBindMenu::LoadBindings: unknown MENUKEY name '{}', keeping default", parts[1]);
 					}
 				}
-				else if (parts[0] == "BIND" && parts.size() >= 3) {
+				else if (parts[0] == "BIND" && parts.size() >= 5) {
 					std::string keyName = trim(parts[1]);
-					std::string scriptPath = trim(parts[2]);
+					bool needShift = trim(parts[2]) == "1";
+					bool needAlt = trim(parts[3]) == "1";
+					std::string scriptPath = trim(parts[4]);
 					int vKey = VKeyForName(keyName);
 					if (vKey == -1) {
 						spdlog::warn("KeyBindMenu::LoadBindings: unknown key name '{}', skipping binding", keyName);
 						continue;
 					}
-					bindings.push_back(KeyBind{ (USHORT)vKey, keyName, scriptPath });
+					//tex: handle assigned once registered - see Init(), which registers everything
+					//loaded here right after this function returns.
+					bindings.push_back(KeyBind{ (USHORT)vKey, needShift, needAlt, keyName, scriptPath, 0 });
+				}
+				else if (parts[0] == "BIND") {
+					spdlog::warn("KeyBindMenu::LoadBindings: skipping old-format/malformed BIND line: {}", line);
 				}
 			}//while line
 			spdlog::debug("KeyBindMenu::LoadBindings: loaded {} binding(s) from {}", bindings.size(), bindsFileName);
 		}//LoadBindings
 
-		void AddBinding(USHORT vKey, const std::string& keyName, const std::string& scriptPath) {
-			KeyBind bind{ vKey, keyName, scriptPath };
+		void AddBinding(USHORT vKey, const std::string& keyName, bool needShift, bool needAlt, const std::string& scriptPath) {
+			KeyBind bind{ vKey, needShift, needAlt, keyName, scriptPath, 0 };
 			bindings.push_back(bind);
-			RegisterBindingAction(bind);
+			bindings.back().handle = RegisterBindingAction(bindings.back());
 			SaveBindings();
 		}//AddBinding
 
@@ -186,10 +216,18 @@ namespace IHHook {
 			if (index < 0 || index >= (int)bindings.size()) {
 				return;
 			}
-			RawInput::UnRegisterAction(bindings[index].vKey);
+			RawInput::UnRegisterAction(bindings[index].vKey, bindings[index].handle);//tex: removes just this one binding's action
 			bindings.erase(bindings.begin() + index);
 			SaveBindings();
 		}//RemoveBinding
+
+		void RemoveAllBindings() {
+			for (const KeyBind& bind : bindings) {
+				RawInput::UnRegisterAction(bind.vKey, bind.handle);
+			}
+			bindings.clear();
+			SaveBindings();
+		}//RemoveAllBindings
 
 		void Init(const std::string& defaultMenuKeyName) {
 			int defaultVKey = VKeyForName(defaultMenuKeyName);
@@ -201,20 +239,20 @@ namespace IHHook {
 			}
 
 			LoadBindings();//tex: may override menuToggleVKey again if ihhook_keybinds.txt has a persisted MENUKEY
-			for (const KeyBind& bind : bindings) {
-				RegisterBindingAction(bind);
+			for (KeyBind& bind : bindings) {
+				bind.handle = RegisterBindingAction(bind);
 			}
 			RegisterMenuToggleKey(menuToggleVKey);
 		}//Init
 
 		void Draw(bool* p_open) {
-			ImGui::SetNextWindowSize(ImVec2(420, 400), ImGuiCond_::ImGuiCond_FirstUseEver);
+			ImGui::SetNextWindowSize(ImVec2(440, 440), ImGuiCond_::ImGuiCond_FirstUseEver);
 			if (!ImGui::Begin("IHHook Key Bindings", p_open)) {
 				ImGui::End();
 				return;
 			}
 
-			//tex: remap the menu's own toggle key
+			//tex: remap the menu's own toggle key (no modifier support here - see IsReservedVKey comment)
 			ImGui::Text("Menu opens with: %s", NameForVKey(menuToggleVKey).c_str());
 			ImGui::SameLine();
 			static int menuKeyComboIndex = -1;
@@ -240,8 +278,8 @@ namespace IHHook {
 			ImGui::SameLine();
 			if (ImGui::Button("Apply##menuKey")) {
 				USHORT newVKey = vkNameTable[menuKeyComboIndex].vKey;
-				if (newVKey == menuToggleVKey || IsVKeyAvailable(newVKey)) {
-					RawInput::UnRegisterAction(menuToggleVKey);
+				if (newVKey == menuToggleVKey || IsComboAvailable(newVKey, false, false)) {
+					RawInput::UnRegisterAction(menuToggleVKey, menuToggleHandle);
 					RegisterMenuToggleKey(newVKey);
 					SaveBindings();
 				}
@@ -251,16 +289,16 @@ namespace IHHook {
 			}
 
 			ImGui::Separator();
-			ImGui::TextWrapped("Custom bindings - press a key in-game to dofile() the matching script.");
+			ImGui::TextWrapped("Custom bindings - press a key (+ Shift/Alt if set) in-game to dofile() the matching script.");
 			ImGui::Spacing();
 
-			//tex: existing bindings list, each with a remove button
+			//tex: existing bindings list, each with its own remove button, plus a bulk "Remove All"
 			int removeIndex = -1;
 			ImGui::BeginChild("BindingsList", ImVec2(0, 200), true);
 			for (int i = 0; i < (int)bindings.size(); i++) {
 				ImGui::PushID(i);
-				ImGui::Text("%s", bindings[i].keyName.c_str());
-				ImGui::SameLine(80);
+				ImGui::Text("%s", CombinedDisplayName(bindings[i]).c_str());
+				ImGui::SameLine(110);
 				ImGui::TextWrapped("%s", bindings[i].scriptPath.c_str());
 				ImGui::SameLine();
 				if (ImGui::Button("Remove")) {
@@ -272,6 +310,16 @@ namespace IHHook {
 			ImGui::EndChild();
 			if (removeIndex != -1) {
 				RemoveBinding(removeIndex);
+			}
+
+			if (bindings.empty()) {
+				ImGui::BeginDisabled();
+			}
+			if (ImGui::Button("Remove All Bindings")) {
+				RemoveAllBindings();
+			}
+			if (bindings.empty()) {
+				ImGui::EndDisabled();
 			}
 
 			ImGui::Spacing();
@@ -288,6 +336,12 @@ namespace IHHook {
 				}
 				ImGui::EndCombo();
 			}
+			ImGui::SameLine();
+			static bool addShift = false;
+			static bool addAlt = false;
+			ImGui::Checkbox("Shift", &addShift);
+			ImGui::SameLine();
+			ImGui::Checkbox("Alt", &addAlt);
 
 			//tex: plain text input rather than a native file-browse dialog - keeps this feature
 			//self-contained with no new Win32 API surface/library dependency (commdlg.h/comdlg32.lib)
@@ -298,19 +352,21 @@ namespace IHHook {
 			ImGui::InputText("##scriptPathInput", scriptPathBuffer, IM_ARRAYSIZE(scriptPathBuffer));
 			ImGui::TextDisabled("Full path to a .lua file, or one relative to the game folder");
 
-			bool canAdd = scriptPathBuffer[0] != '\0' && IsVKeyAvailable(vkNameTable[addComboIndex].vKey);
+			USHORT selectedVKey = vkNameTable[addComboIndex].vKey;
+			bool comboAvailable = IsComboAvailable(selectedVKey, addShift, addAlt);
+			bool canAdd = scriptPathBuffer[0] != '\0' && comboAvailable;
 			if (!canAdd) {
 				ImGui::BeginDisabled();
 			}
 			if (ImGui::Button("Add Binding")) {
-				AddBinding(vkNameTable[addComboIndex].vKey, vkNameTable[addComboIndex].name, scriptPathBuffer);
+				AddBinding(selectedVKey, vkNameTable[addComboIndex].name, addShift, addAlt, scriptPathBuffer);
 				scriptPathBuffer[0] = '\0';
 			}
 			if (!canAdd) {
 				ImGui::EndDisabled();
 			}
-			if (scriptPathBuffer[0] != '\0' && !IsVKeyAvailable(vkNameTable[addComboIndex].vKey)) {
-				ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s is already in use (built-in key, the menu-toggle key, or another binding)", vkNameTable[addComboIndex].name);
+			if (scriptPathBuffer[0] != '\0' && !comboAvailable) {
+				ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "That key + modifier combination is already in use");
 			}
 
 			ImGui::End();
