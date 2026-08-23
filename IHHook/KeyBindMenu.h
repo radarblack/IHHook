@@ -6,14 +6,18 @@
 
 namespace IHHook {
 	namespace KeyBindMenu {
-		//tex: one user-added "press this key (+ optional Shift/Alt), run this lua file" binding
+		//tex: one user-added "press this key (+ optional Ctrl/Shift/Alt), run this lua file" binding.
+		//GOTCHA: no per-binding RawInput::ActionHandle here anymore - a single shared dispatcher
+		//now covers every binding on a given vKey (see EnsureDispatcherRegistered in the .cpp),
+		//since the dispatcher needs to see ALL bindings on that key at once to implement fallback
+		//(e.g. Shift+X falls back to plain X if no Shift+X-specific binding exists).
 		struct KeyBind {
 			USHORT vKey;
+			bool needCtrl;
 			bool needShift;
 			bool needAlt;
 			std::string keyName;     //tex: base key display name, e.g. "F6", "A", "," - see vkNameTable
 			std::string scriptPath;  //tex: passed to dofile() via the same DoScript IPC path RunKeyZScript uses
-			RawInput::ActionHandle handle; //tex: needed to remove just THIS binding, not every action on vKey
 		};
 
 		//tex: called once at startup (see IHHook.cpp init sequence) - loads persisted bindings
