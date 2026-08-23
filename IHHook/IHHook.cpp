@@ -645,7 +645,7 @@ namespace IHHook {
 
 			IHMenu::AddMenuCommands();
 
-			DebuggerMenu::Init();//tex: registers the DoScriptResult command - must come before KeyBindMenu/RunKeyZScript can log anything useful through it
+			DebuggerMenu::Init();//tex: registers the DoScriptResult command - must come before KeyBindMenu can log anything useful through it
 
 			KeyBindMenu::Init(config.keyBindMenuToggleKey);//tex: loads/registers persisted key bindings + the menu-toggle key (default F4)
 
@@ -789,7 +789,6 @@ namespace IHHook {
 		config.logFileLoad = false;
 		config.forceUsePatterns = false;
 		config.logFoxStringCreateInPlace = false; //ZIP: Fox hooks
-		config.keyZScriptPath = "";
 		config.keyBindMenuToggleKey = "F4";
 
 		std::string line;
@@ -870,15 +869,6 @@ namespace IHHook {
 			}
 			else if (varName == "logTime") {
 				config.logTime = valueStr == "true";
-			}
-			else if (varName == "keyZScriptPath") {
-				//tex strip surrounding quotes ("..." or '...') since this is a string value, not bool
-				if (valueStr.size() >= 2 &&
-					((valueStr.front() == '"' && valueStr.back() == '"') ||
-					 (valueStr.front() == '\'' && valueStr.back() == '\''))) {
-					valueStr = valueStr.substr(1, valueStr.size() - 2);
-				}
-				config.keyZScriptPath = valueStr;
 			}
 			else if (varName == "keyBindMenuToggleKey") {
 				if (valueStr.size() >= 2 &&
