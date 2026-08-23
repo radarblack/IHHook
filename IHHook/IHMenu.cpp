@@ -257,7 +257,9 @@ namespace IHHook {
 			g_ihhook->SetCursor(true);
 		}//EnableCursor
 
-		typedef void(*MenuCommandFunc) (std::vector<std::string> args);
+		//tex: MenuCommandFunc now declared in IHMenu.h (so AddMenuCommand can be called from
+		//other modules too, e.g. DebuggerMenu) - removed the duplicate local typedef that used
+		//to be here.
 		std::map<std::string, MenuCommandFunc> menuCommands;
 		void AddMenuCommands() {
 			menuCommands["SetContent"] = SetContent;
@@ -276,6 +278,10 @@ namespace IHHook {
 			menuCommands["EnableCursor"] = EnableCursor;
 			//SelectAllText
 		}//AddMenuCommands
+
+		void AddMenuCommand(const std::string& cmd, MenuCommandFunc func) {
+			menuCommands[cmd] = func;
+		}//AddMenuCommand
 
 		//DEBUGNOW
 		void MenuMessage(std::string message) {
