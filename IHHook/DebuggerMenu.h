@@ -19,8 +19,8 @@ namespace IHHook {
 
 		void Draw(bool* p_open);
 
-		//tex: each is a no-op unless its matching logXxx toggle is enabled, so callers (KeyBindMenu,
-		//RawInput's RunKeyZScript) don't need to check the toggle themselves.
+		//tex: each is a no-op unless its matching logXxx toggle is enabled, so callers (KeyBindMenu)
+		//don't need to check the toggle themselves.
 		void LogBindEvent(const std::string& message);
 		void LogButtonPress(const std::string& message);
 
