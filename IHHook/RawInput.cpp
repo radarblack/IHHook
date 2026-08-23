@@ -9,6 +9,7 @@
 #include "spdlog/spdlog.h"
 #include "IHHook.h"
 #include "IHMenu.h"
+#include "DebuggerMenu.h"
 
 namespace IHHook {
 	namespace RawInput {
@@ -339,15 +340,19 @@ namespace IHHook {
 				return;
 			}
 
+			DebuggerMenu::LogButtonPress("Z pressed");
+
 			if (config.keyZScriptPath.empty()) {
-				spdlog::warn("RunKeyZScript: ihhook_config.lua keyZScriptPath is not set, ignoring Z press");
-				return;
+				return;//tex: Z is simply unconfigured - the button-press log above already shows Z fired, which is enough to diagnose "why isn't anything happening"
 			}
 
-			spdlog::debug("RunKeyZScript: queuing dofile for {}", config.keyZScriptPath);
 			//tex: [[ ]] long-bracket string avoids having to escape backslashes in windows paths.
 			//GOTCHA: DoScript's IPC message is pipe('|') delimited, so keyZScriptPath must not contain '|'.
-			IHMenu::QueueMessageIn("DoScript|dofile([[" + config.keyZScriptPath + "]])");
+			//LogScriptAttempt does the actual dll-side file-existence check (not just logging) -
+			//only queue the IPC message to Lua if the file is really there.
+			if (DebuggerMenu::LogScriptAttempt(config.keyZScriptPath)) {
+				IHMenu::QueueMessageIn("DoScript|dofile([[" + config.keyZScriptPath + "]])");
+			}
 		}//RunKeyZScript
 
 		//DEBUGNOW
