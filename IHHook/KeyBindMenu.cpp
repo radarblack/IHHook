@@ -114,11 +114,14 @@ namespace IHHook {
 		}//RegisterMenuToggleKey
 
 		//tex: reserved regardless of modifiers - these built-in actions (ToggleCursor, ToggleMenu,
-		//MenuOff, RunKeyZScript, and this menu's own toggle key) don't check modifier state
-		//themselves, so e.g. Shift+F2 would still fire the plain ToggleCursor action alongside
-		//whatever a new Shift+F2 custom binding did. Simplest to just keep these fully reserved.
+		//MenuOff, and this menu's own toggle key) don't check modifier state themselves, so e.g.
+		//Shift+F2 would still fire the plain ToggleCursor action alongside whatever a new
+		//Shift+F2 custom binding did. Simplest to just keep these fully reserved.
+		//GOTCHA: 'Z' used to be reserved here too (the old standalone keyZScriptPath/RunKeyZScript
+		//feature) - that's been removed entirely in favour of this menu, so Z is just a normal
+		//bindable key now like any other letter.
 		bool IsReservedVKey(USHORT vKey) {
-			return vKey == VK_F2 || vKey == VK_F3 || vKey == VK_ESCAPE || vKey == 'Z' || vKey == menuToggleVKey;
+			return vKey == VK_F2 || vKey == VK_F3 || vKey == VK_ESCAPE || vKey == menuToggleVKey;
 		}//IsReservedVKey
 
 		//tex: true if this exact key+modifier combination is free to bind. Different modifier
@@ -443,7 +446,7 @@ namespace IHHook {
 			//tex: plain text input rather than a native file-browse dialog - keeps this feature
 			//self-contained with no new Win32 API surface/library dependency (commdlg.h/comdlg32.lib)
 			//to get wrong on a first pass. Paste an absolute path, or one relative to game root
-			//(same as keyZScriptPath) - dofile() accepts either.
+			//(relative to the game folder, or absolute) - dofile() accepts either.
 			static char scriptPathBuffer[512] = "";
 			ImGui::SetNextItemWidth(-1);
 			ImGui::InputText("##scriptPathInput", scriptPathBuffer, IM_ARRAYSIZE(scriptPathBuffer));
