@@ -34,6 +34,7 @@
 
 #include "IHMenu.h"
 #include "KeyBindMenu.h"
+#include "DebuggerMenu.h"
 #include "StyleEditor.h"
 
 #include "Util.h"//config 
@@ -306,7 +307,7 @@ namespace IHHook {
 
 			auto tend = std::chrono::high_resolution_clock::now();
 			auto durationShort = std::chrono::duration_cast<std::chrono::microseconds>(tend - tstart).count();
-			spdlog::debug("IHHook::CreateHooks total time(microseconds): {}�s", durationShort);
+			spdlog::debug("IHHook::CreateHooks total time(microseconds): {} s", durationShort);
 		}//if doHooks
 
 		PipeServer::StartPipeServer();
@@ -644,6 +645,8 @@ namespace IHHook {
 
 			IHMenu::AddMenuCommands();
 
+			DebuggerMenu::Init();//tex: registers the DoScriptResult command - must come before KeyBindMenu/RunKeyZScript can log anything useful through it
+
 			KeyBindMenu::Init(config.keyBindMenuToggleKey);//tex: loads/registers persisted key bindings + the menu-toggle key (default F4)
 
 			InitCursorHook();
@@ -760,6 +763,10 @@ namespace IHHook {
 
 		if (KeyBindMenu::menuOpen) {
 			KeyBindMenu::Draw(&KeyBindMenu::menuOpen);
+		}
+
+		if (DebuggerMenu::menuOpen) {
+			DebuggerMenu::Draw(&DebuggerMenu::menuOpen);
 		}
 
 		//ImGui::End();
