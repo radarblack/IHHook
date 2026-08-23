@@ -17,7 +17,7 @@ namespace IHHook {
 			bool needShift;
 			bool needAlt;
 			std::string keyName;     //tex: base key display name, e.g. "F6", "A", "," - see vkNameTable
-			std::string scriptPath;  //tex: passed to dofile() via the same DoScript IPC path RunKeyZScript uses
+			std::string scriptPath;  //tex: passed to dofile() via the DoScript IPC command (see RegisterBindingAction/OnBoundKeyPressed)
 		};
 
 		//tex: called once at startup (see IHHook.cpp init sequence) - loads persisted bindings
