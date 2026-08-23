@@ -9,7 +9,6 @@
 #include "spdlog/spdlog.h"
 #include "IHHook.h"
 #include "IHMenu.h"
-#include "DebuggerMenu.h"
 
 namespace IHHook {
 	namespace RawInput {
@@ -330,31 +329,6 @@ namespace IHHook {
 			}
 		}//ToggleStyleEditor
 
-		//tex: runs config.keyZScriptPath (set via ihhook_config.lua) on the mgsv lua side.
-		//GOTCHA: don't touch Hooks_Lua::luaState directly here - RawInput's WndProc runs on a different
-		//thread to the one running mgsv's lua state, so cross-thread lua_pcall/luaL_loadfile would be unsafe.
-		//Instead reuse the existing thread-safe IHMenu message queue (same one ToggleMenu/MenuOff use below),
-		//which InfExtToMgsv.lua already drains and dispatches to the existing "DoScript" command (loadstring+call).
-		void RunKeyZScript(RawInput::BUTTONEVENT buttonEvent) {
-			if (buttonEvent != RawInput::BUTTONEVENT::ONDOWN) {
-				return;
-			}
-
-			DebuggerMenu::LogButtonPress("Z pressed");
-
-			if (config.keyZScriptPath.empty()) {
-				return;//tex: Z is simply unconfigured - the button-press log above already shows Z fired, which is enough to diagnose "why isn't anything happening"
-			}
-
-			//tex: [[ ]] long-bracket string avoids having to escape backslashes in windows paths.
-			//GOTCHA: DoScript's IPC message is pipe('|') delimited, so keyZScriptPath must not contain '|'.
-			//LogScriptAttempt does the actual dll-side file-existence check (not just logging) -
-			//only queue the IPC message to Lua if the file is really there.
-			if (DebuggerMenu::LogScriptAttempt(config.keyZScriptPath)) {
-				IHMenu::QueueMessageIn("DoScript|dofile([[" + config.keyZScriptPath + "]])");
-			}
-		}//RunKeyZScript
-
 		//DEBUGNOW
 		//tex GOTCHA: WORKAROUND: The game stops lua updates (all gameplay updates I guess) in the pause menu, 
 		//this didn't matter much when IH was lua only, because it would catch that ESC was pressed when the engine resumed the lua state
@@ -450,7 +424,6 @@ namespace IHHook {
 			RegisterAction(VK_F2, ToggleCursor);//DEBUGNOW
 			RegisterAction(VK_F3, ToggleMenu);//DEBUGNOW
 			RegisterAction(VK_ESCAPE, MenuOff);//DEBUGNOW
-			RegisterAction('Z', RunKeyZScript);//tex: runs config.keyZScriptPath, see RunKeyZScript
 			//RegisterAction(VK_F5, ToggleImguiDemo);//DEBUGNOW
 			//RegisterAction(VK_F4, ToggleStyleEditor);//DEBUGNOW
 
