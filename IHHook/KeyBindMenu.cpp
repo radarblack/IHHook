@@ -1,11 +1,13 @@
 #include "KeyBindMenu.h"
 #include "RawInput.h"
 #include "IHMenu.h"
+#include "DebuggerMenu.h"
 #include "Util.h"
 #include "spdlog/spdlog.h"
 #include "imgui/imgui.h"
 
 #include <fstream>
+#include <filesystem>
 #include <map>
 
 namespace IHHook {
@@ -13,12 +15,14 @@ namespace IHHook {
 
 		std::vector<KeyBind> bindings;
 
-		//tex: persisted separately from ihhook_config.lua rather than shoehorned into it -
-		//ihhook_config.lua's parser (see IHHook.cpp ParseConfig) is a fragile fixed-shape
-		//key=value format, not suited to a variable-length list that also needs to be
-		//re-written from the GUI every time a binding is added/removed. This is a much
-		//simpler format we fully own both the reader and writer for.
-		const std::string bindsFileName = "ihhook_keybinds.txt";
+		//tex: lives under mod/radarKeys/ (created automatically if missing - see SaveBindings)
+		//alongside any other files this mod needs, rather than loose at game root next to
+		//dinput8.dll. Renamed from the old ihhook_keybinds.txt/.conf naming to make clear this
+		//is specifically this mod's own config, not a generic ihhook file.
+		//GOTCHA: this is a path/name change from earlier builds - an existing ihhook_keybinds.txt
+		//at game root is NOT migrated automatically; bindings saved under the old name need to be
+		//re-added once under this new path.
+		const std::string bindsFileName = "mod/radarKeys/radar_keybinds.conf";
 
 		//tex: not exhaustive, but covers the common cases for a dropdown. name is what's shown
 		//in the combo box and what's persisted to disk (so the file stays human-readable/editable).
@@ -147,6 +151,16 @@ namespace IHHook {
 			bool shiftHeld = RawInput::IsKeyDown(VK_SHIFT);
 			bool altHeld = RawInput::IsKeyDown(VK_MENU);
 
+			//tex: "log when a button was pressed" fires for every ONDOWN on a bound vKey,
+			//regardless of whether it actually resolves to a script below - this is meant to
+			//report the raw key event, not just successful matches.
+			std::string pressedName;
+			if (ctrlHeld) pressedName += "Ctrl+";
+			if (shiftHeld) pressedName += "Shift+";
+			if (altHeld) pressedName += "Alt+";
+			pressedName += NameForVKey(vKey);
+			DebuggerMenu::LogButtonPress(pressedName + " pressed");
+
 			const KeyBind* exactMatch = nullptr;
 			const KeyBind* fallbackMatch = nullptr;//tex: the plain/no-modifier binding on this vKey, if any
 			for (const KeyBind& bind : bindings) {
@@ -164,10 +178,12 @@ namespace IHHook {
 
 			const KeyBind* toRun = exactMatch != nullptr ? exactMatch : fallbackMatch;
 			if (toRun != nullptr) {
-				spdlog::debug("KeyBindMenu: queuing dofile for {} (vKey {}, ctrl={} shift={} alt={}, {})",
-					toRun->scriptPath, vKey, ctrlHeld, shiftHeld, altHeld,
-					(toRun == exactMatch ? "exact match" : "fallback to unmodified binding"));
-				IHMenu::QueueMessageIn("DoScript|dofile([[" + toRun->scriptPath + "]])");
+				//tex: LogScriptAttempt does the actual dll-side file-existence check (not just
+				//logging) - only queue the IPC message to Lua if the file is really there. If it
+				//returns false, it already logged the "not found" entry itself.
+				if (DebuggerMenu::LogScriptAttempt(toRun->scriptPath)) {
+					IHMenu::QueueMessageIn("DoScript|dofile([[" + toRun->scriptPath + "]])");
+				}
 			}
 		}//OnBoundKeyPressed
 
@@ -199,6 +215,15 @@ namespace IHHook {
 		}//RemoveDispatcherIfUnused
 
 		void SaveBindings() {
+			//tex: ofstream won't create missing intermediate directories itself - ensure
+			//mod/radarKeys/ exists before attempting to open the file inside it (matters on
+			//first run, or first run after this path changed from the old game-root location).
+			std::error_code ec;
+			std::filesystem::create_directories("mod/radarKeys", ec);
+			if (ec) {
+				spdlog::warn("KeyBindMenu::SaveBindings: couldn't create mod/radarKeys directory: {}", ec.message());
+			}
+
 			std::ofstream outFile(bindsFileName);
 			if (!outFile) {
 				spdlog::warn("KeyBindMenu::SaveBindings: couldn't open {} for writing", bindsFileName);
@@ -263,28 +288,34 @@ namespace IHHook {
 		}//LoadBindings
 
 		void AddBinding(USHORT vKey, const std::string& keyName, bool needCtrl, bool needShift, bool needAlt, const std::string& scriptPath) {
-			bindings.push_back(KeyBind{ vKey, needCtrl, needShift, needAlt, keyName, scriptPath });
+			KeyBind bind{ vKey, needCtrl, needShift, needAlt, keyName, scriptPath };
+			bindings.push_back(bind);
 			EnsureDispatcherRegistered(vKey);
 			SaveBindings();
+			DebuggerMenu::LogBindEvent("bound " + CombinedDisplayName(bind) + " -> " + scriptPath);
 		}//AddBinding
 
 		void RemoveBinding(int index) {
 			if (index < 0 || index >= (int)bindings.size()) {
 				return;
 			}
+			std::string removedDesc = CombinedDisplayName(bindings[index]) + " -> " + bindings[index].scriptPath;
 			USHORT vKey = bindings[index].vKey;
 			bindings.erase(bindings.begin() + index);
 			RemoveDispatcherIfUnused(vKey);
 			SaveBindings();
+			DebuggerMenu::LogBindEvent("unbound " + removedDesc);
 		}//RemoveBinding
 
 		void RemoveAllBindings() {
+			size_t count = bindings.size();
 			for (const auto& entry : vKeyDispatchers) {
 				RawInput::UnRegisterAction(entry.first, entry.second);
 			}
 			vKeyDispatchers.clear();
 			bindings.clear();
 			SaveBindings();
+			DebuggerMenu::LogBindEvent("unbound all (" + std::to_string(count) + " binding(s))");
 		}//RemoveAllBindings
 
 		void Init(const std::string& defaultMenuKeyName) {
@@ -309,6 +340,11 @@ namespace IHHook {
 				ImGui::End();
 				return;
 			}
+
+			if (ImGui::Button("Debugger")) {
+				DebuggerMenu::menuOpen = !DebuggerMenu::menuOpen;
+			}
+			ImGui::Separator();
 
 			//tex: remap the menu's own toggle key (no modifier support here - see IsReservedVKey comment)
 			ImGui::Text("Menu opens with: %s", NameForVKey(menuToggleVKey).c_str());
